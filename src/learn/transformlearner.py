@@ -10,30 +10,30 @@ DATA_DIRECTORY = '../../data'
 MODEL_DIRECTORY = '../../saved_models'
 
 class TransformLearner(object):
-    """Class for learning and identifying a specific image transformation"""
+    """Class for learning to identify a specific image transformation"""
 
-    def __init__(self, **config):
-        create = config.pop('create_data', False)
-
-        self.name = config.get('name', 'default')
-        self.regularize = config.get('regularize', True)
-        self.ideal_rs = config.get('ideal_rs', None)
+    def __init__(self, name='default', create_data=False, regularize=True, ideal_rs=None,
+                 n_epochs=1000, **config):
+        self.name = name
+        self.regularize = regularize
+        self.ideal_rs = ideal_rs
+        self.n_epochs = n_epochs
+        self.sess = None
 
         self.data_file = '{}/{}_data.csv'.format(DATA_DIRECTORY, self.name)
         self.model_file = '{}/{}_model.csv'.format(MODEL_DIRECTORY, self.name)
 
         # Read or create data
-        data_fn = DataSet.create if create else DataSet.read
+        data_fn = DataSet.create if create_data else DataSet.read
         self.data = data_fn(self.data_file, **config)
 
-        self.n_epochs = config.get('n_epochs', 1000)
-        self.sess = None
-
-    def run(self, start_rs=0.01):
-        """Trains and evaluates the algorithm
+    def train(self, start_rs=0.01, persist_session=False):
+        """Initializes tensors and trains the algorithm, adjusting regularization strength
+        if necessary
 
         Keyword Arguments:
             start_rs {float} -- Seed value for _find_ideal_rs (default: {0.01})
+            persist_session {bool} -- If True, does not close the session after training (default: {False})
         """
         ideal_rs = self.ideal_rs
 
@@ -42,9 +42,30 @@ class TransformLearner(object):
 
         self._init_tensors(random=True, reg_strength=ideal_rs)
 
-        with self._session():
-            self._train(plot_cost=True)
-            self._evaluate()
+        with self.session(persist=persist_session):
+            self._train()
+
+    def evaluate(self, test_set=None):
+        """Evalutes the performance of the algorithm using a provided test set if one is given,
+        or else the default test set from this.data
+
+        Raises:
+            ValueError -- If a session has not already been initialized
+        """
+        X, Y, W, b, y_, cost, cost_no_reg, training_step = self.tensors
+
+        if self.sess is None:
+            raise ValueError('No existing TensorFlow session')
+
+        if test_set is None:
+            test_set = (self.data.X_test, self.data.y_test)
+
+        pred_y = self.sess.run(y_, feed_dict={X: test_set[0]})
+        self.print_percent_within(pred_y, [0.01, 0.05, 0.1])
+        self.plot_predictions(pred_y)
+
+        test_error = self.sess.run(cost_no_reg, feed_dict={X: test_set[0], Y: test_set[1]})
+        print 'Test error: %.3f' % test_error
 
     def plot_learning_curves(self, granularity=15):
         """Plots the training set and cross-validation set errors as a function of
@@ -106,12 +127,8 @@ class TransformLearner(object):
         training_step = tf.train.AdamOptimizer().minimize(cost)
         self.tensors = (X, Y, W, b, y_, cost, cost_no_reg, training_step)
 
-    def _train(self, plot_cost=False):
+    def _train(self):
         """Trains the algorithm
-
-        Keyword Arguments:
-            plot_cost {bool} -- If True, plots the training error as a function of the
-                                number of epochs that have occured (default: {False})
 
         Returns:
             tuple -- (training error, cross-validation error)
@@ -122,11 +139,10 @@ class TransformLearner(object):
         X, Y, W, b, y_, cost, cost_no_reg, training_step = self.tensors
 
         if self.sess is None:
-            raise ValueError('Session has not been initialized')
+            raise ValueError('No existing TensorFlow session')
 
         # Train
         print 'Running gradient descent with {} batch(es)...'.format(self.data.n_batches)
-        cost_history = []
 
         for epoch in range(self.n_epochs):
             for batch in range(self.data.n_batches):
@@ -135,11 +151,7 @@ class TransformLearner(object):
 
             if epoch % COST_GRANULARITY == 0:
                 c = self.sess.run(cost, feed_dict={X: self.data.X_train, Y: self.data.y_train})
-                cost_history.append(c)
                 print('Epoch: {}  Cost: %.2f'.format(epoch) % c)
-
-        if plot_cost:
-            self.plot_cost(cost_history)
 
         train_error = self.sess.run(cost_no_reg, feed_dict={X: self.data.X_train, Y: self.data.y_train})
         cv_error = self.sess.run(cost_no_reg, feed_dict={X: self.data.X_cval, Y: self.data.y_cval})
@@ -148,24 +160,6 @@ class TransformLearner(object):
         print 'Cross-validation error: %.3f' % cv_error
 
         return train_error, cv_error
-
-    def _evaluate(self):
-        """Evalutes the performance of the algorithm
-
-        Raises:
-            ValueError -- If a session has not already been initialized
-        """
-        X, Y, W, b, y_, cost, cost_no_reg, training_step = self.tensors
-
-        if self.sess is None:
-            raise ValueError('Session has not been initialized')
-
-        pred_y = self.sess.run(y_, feed_dict={X: self.data.X_test})
-        self.print_percent_within(pred_y, [0.01, 0.05, 0.1])
-        self.plot_predictions(pred_y)
-
-        test_error = self.sess.run(cost_no_reg, feed_dict={X: self.data.X_test, Y: self.data.y_test})
-        print 'Test error: %.3f' % test_error
 
     def _find_ideal_rs(self, start_value=0.01, n_iters=7, precision=3):
         """Determines the ideal regularization strength value using cross-validation
@@ -195,7 +189,7 @@ class TransformLearner(object):
             print 'Evaluating with regularization strength: {}'.format(rs)
             self._init_tensors(reg_strength=rs)
 
-            with self._session():
+            with self.session():
                 cv_errors.append(self._train()[1])
 
         np.round(cv_errors, decimals=precision)
@@ -215,26 +209,23 @@ class TransformLearner(object):
             return ideal_rs
 
     @contextmanager
-    def _session(self):
-        self._init_session()
+    def session(self, persist=False):
+        self.init_session()
         try:
             yield
         finally:
-            self._close_session()
+            if not persist:
+                self.close_session()
 
-    def _init_session(self):
-        if self.sess is not None:
-            raise ValueError('Session is already initialized')
-
-        self.sess = tf.Session()
-        self.sess.run(tf.global_variables_initializer())
-
-    def _close_session(self):
+    def init_session(self):
         if self.sess is None:
-            raise ValueError('No session to close')
+            self.sess = tf.Session()
+            self.sess.run(tf.global_variables_initializer())
 
-        self.sess.close()
-        self.sess = None
+    def close_session(self):
+        if self.sess is not None:
+            self.sess.close()
+            self.sess = None
 
     def print_percent_within(self, predicted, given_pcts):
         value_range = self.data.y_test.max() - self.data.y_test.min()
@@ -243,12 +234,6 @@ class TransformLearner(object):
             within_range = np.abs(predicted - self.data.y_test) / value_range < pct
             percent_in_range = np.mean(within_range)
             print('Predictions within {}%% of actual: %.2f%%'.format(int(pct * 100)) % (percent_in_range * 100))
-
-    def plot_cost(self, cost_history):
-        steps = [step * COST_GRANULARITY for step in range(len(cost_history))]
-        plt.plot(steps, cost_history)
-        plt.axis([0, self.n_epochs, 0, np.max(cost_history)])
-        plt.show()
 
     def plot_predictions(self, pred_y):
         y_test = self.data.y_test
