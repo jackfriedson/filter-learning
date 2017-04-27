@@ -10,6 +10,7 @@ class FilterLearner(object):
 
         # Data initalization
         'create_data'   : False,
+        'max_examples'  : None,
         'preprocess_fn' : None,
         'data_batch'    : 100,
         'img_height'    : 100,
@@ -31,6 +32,7 @@ class FilterLearner(object):
 
     def __init__(self, transform_configs):
         self.transform_learners = [self.new_transform_learner(config) for config in transform_configs]
+        self.transform_fns = [tl.transform_fn for tl in self.transform_learners]
 
     def new_transform_learner(self, config):
         new_config = copy.deepcopy(self.base_config)

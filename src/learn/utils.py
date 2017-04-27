@@ -14,8 +14,6 @@ from skimage.transform import resize
 from skimage.util import img_as_float, img_as_ubyte
 from sklearn.utils import shuffle
 
-NORMAL_PERCENT = 4
-
 IMG_FOLDER = '../../images/'
 TEST_IMG_PATH = '../../transformed_imgs'
 MIN_HEIGHT = 100
@@ -32,7 +30,7 @@ def create_img_data(transform_fn, preprocess_fn=None, img_height=MIN_HEIGHT,
     and these differences with their corresponding transformation value are returned.
 
     Arguments:
-        transform_fn {function} -- Function that takes a list of images as input and transforms
+        transform_fn {function} -- A function that takes a list of images as input and transforms
                                    them in some way
         **config {dictionary} -- Configuration settings
 
@@ -54,23 +52,23 @@ def create_img_data(transform_fn, preprocess_fn=None, img_height=MIN_HEIGHT,
         batch_start = i * data_batch
         batch_end = (i + 1) * data_batch
 
-        imgs = []
+        batch_imgs = []
         for path in imgpaths[batch_start:batch_end]:
             try:
                 img = img_as_ubyte(imread(path))
                 raise_if_invalid(img)
-                imgs.append(img)
+                batch_imgs.append(img)
             except (ValueError, IOError):
                 print 'Deleting file: {}'.format(path)
                 os.remove(path)
 
-        batch_originals, batch_transforms, batch_values = transform_fn(imgs)
+        batch_transform_imgs, batch_values = transform_fn(batch_imgs)
 
-        originals.extend(batch_originals)
-        transforms.extend(batch_transforms)
+        originals.extend(batch_imgs)
+        transforms.extend(batch_transform_imgs)
 
         imsize = partial(resize_img, height=img_height, width=img_width)
-        imgpairs = zip(imsize(batch_transforms), imsize(batch_originals))
+        imgpairs = zip(imsize(batch_transform_imgs), imsize(batch_imgs))
 
         if preprocess_fn is not None:
             imgpairs = [(preprocess_fn(t), preprocess_fn(o)) for t, o in imgpairs]
@@ -115,9 +113,10 @@ def save_images(originals, transforms, name):
 #       Transform Functions         #
 #####################################
 
-def adjust_hsv(imgset, idx):
-    values = random.normal(loc=0.0, scale=0.33, size=len(imgset))
-    np.clip(values, -1.0, 0.0)
+def adjust_hsv(imgset, idx, values=None):
+    if values is None:
+        values = random.normal(loc=0.0, scale=0.33, size=len(imgset))
+        np.clip(values, -1.0, 0.0)
 
     def adjust_one(img, value):
         hsv = rgb2hsv(img)
@@ -127,23 +126,24 @@ def adjust_hsv(imgset, idx):
         return hsv2rgb(hsv)
 
     result_imgs = [adjust_one(img, values[i]) for i, img in enumerate(imgset)]
-    return imgset, result_imgs, values
+    return result_imgs, values
 
-def adjust_hue(imgset):
-    return adjust_hsv(imgset, 0)
+def adjust_hue(imgset, values=None):
+    return adjust_hsv(imgset, 0, values)
 
-def adjust_saturation(imgset):
-    return adjust_hsv(imgset, 1)
+def adjust_saturation(imgset, values=None):
+    return adjust_hsv(imgset, 1, values)
 
-def adjust_brightness(imgset):
-    return adjust_hsv(imgset, 2)
+def adjust_brightness(imgset, values=None):
+    return adjust_hsv(imgset, 2, values)
 
-def adjust_contrast(imgset):
-    values = random.normal(loc=0.5, scale=0.152, size=len(imgset))
-    np.clip(values, 0.0, 1.0)
+def adjust_contrast(imgset, values=None):
+    if values is None:
+        values = random.normal(loc=0.5, scale=0.152, size=len(imgset))
+        np.clip(values, 0.0, 1.0)
 
     result_imgs = [adjust_sigmoid(img, cutoff=values[i]) for i, img in enumerate(imgset)]
-    return imgset, result_imgs, values
+    return result_imgs, values
 
 
 #####################################

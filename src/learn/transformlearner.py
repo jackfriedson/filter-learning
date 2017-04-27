@@ -15,6 +15,7 @@ class TransformLearner(object):
     def __init__(self, name='default', create_data=False, regularize=True, ideal_rs=None,
                  n_epochs=1000, **config):
         self.name = name
+        self.transform_fn = config.get('transform_fn')
         self.regularize = regularize
         self.ideal_rs = ideal_rs
         self.n_epochs = n_epochs

@@ -16,8 +16,6 @@ class DataSet(object):
         if len(examples) != len(labels):
             raise ValueError('Must provide same number of examples and labels')
 
-        self.config = config
-
         self.examples = np.array(examples)
         self.labels = np.array(labels, ndmin=2).T
         self.train_percent = train_percent
@@ -29,7 +27,6 @@ class DataSet(object):
         if pca:
             self.perform_pca(normalize, retained_variance)
         elif normalize:
-            self.split_data()
             self.normalize_data()
 
         self.backup_train_data()
@@ -41,7 +38,7 @@ class DataSet(object):
 
     @staticmethod
     def create(filename, **config):
-        """Builder method for creating a new dataset
+        """Factory method for creating a new dataset
 
         Arguments:
             filename {string} -- Path of file to save the new dataset to
@@ -64,7 +61,7 @@ class DataSet(object):
 
     @staticmethod
     def read(filename, **config):
-        """Builder method for reading a dataset from an existing CSV file"""
+        """Factory method for reading a dataset from an existing CSV file"""
         print 'Reading data from CSV...'
 
         dataset = tf.contrib.learn.datasets.base.load_csv_without_header(
