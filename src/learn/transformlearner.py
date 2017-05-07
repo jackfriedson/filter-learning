@@ -47,8 +47,8 @@ class TransformLearner(object):
             self._train()
 
     def evaluate(self, test_set=None):
-        """Evalutes the performance of the algorithm using a provided test set if one is given,
-        or else the default test set from this.data
+        """Evalutes the performance of the algorithm using the provided test set (if one
+        is given) or the default test set from this.data
 
         Raises:
             ValueError -- If a session has not already been initialized

@@ -15,7 +15,7 @@ from skimage.util import img_as_float, img_as_ubyte
 from sklearn.utils import shuffle
 
 IMG_FOLDER = '../../images/'
-TEST_IMG_PATH = '../../transformed_imgs'
+TEST_IMG_PATH = '../../transformed_imgs/'
 MIN_HEIGHT = 100
 MIN_WIDTH = 100
 
@@ -43,28 +43,15 @@ def create_img_data(transform_fn, preprocess_fn=None, img_height=MIN_HEIGHT,
     n_imgs = len(imgpaths)
     n_batches = int(np.ceil(n_imgs / float(data_batch))) if data_batch is not None else 1
 
-    originals = []
-    transforms = []
-    values = []
-    diffs = []
+    originals, transforms, values, diffs = [], [], [], []
 
     for i in range(n_batches):
         batch_start = i * data_batch
         batch_end = (i + 1) * data_batch
-
-        batch_imgs = []
-        for path in imgpaths[batch_start:batch_end]:
-            try:
-                img = img_as_ubyte(imread(path))
-                raise_if_invalid(img)
-                batch_imgs.append(img)
-            except (ValueError, IOError):
-                print 'Deleting file: {}'.format(path)
-                os.remove(path)
+        batch_imgs = [read_or_delete_img(path) for path in imgpaths[batch_start:batch_end]]
+        originals.extend(batch_imgs)
 
         batch_transform_imgs, batch_values = transform_fn(batch_imgs)
-
-        originals.extend(batch_imgs)
         transforms.extend(batch_transform_imgs)
 
         imsize = partial(resize_img, height=img_height, width=img_width)
@@ -87,6 +74,15 @@ def create_img_data(transform_fn, preprocess_fn=None, img_height=MIN_HEIGHT,
 
     return diffs, values
 
+def read_or_delete_img(path):
+    try:
+        img = img_as_ubyte(imread(path))
+        raise_if_invalid(img)
+        return img
+    except (ValueError, IOError):
+        print 'Deleting file: {}'.format(path)
+        os.remove(path)
+
 def raise_if_invalid(img):
     if not (img.ndim < 4 \
         and img.shape[0] > MIN_HEIGHT \
@@ -97,7 +93,7 @@ def resize_img(imgset, height=MIN_HEIGHT, width=MIN_WIDTH):
     return [resize(img, (height, width)) for img in imgset]
 
 def save_images(originals, transforms, name):
-    directory = 'test_images/{}'.format(name)
+    directory = '{}{}/'.format(TEST_IMG_PATH, name)
 
     if os.path.exists(directory):
         shutil.rmtree(directory)
@@ -105,18 +101,17 @@ def save_images(originals, transforms, name):
     os.makedirs(directory)
 
     for i in range(len(originals)):
-        imsave('{}/original_{}.jpg'.format(directory, i), originals[i])
-        imsave('{}/transformed_{}.jpg'.format(directory, i), transforms[i])
+        imsave('{}original_{}.jpg'.format(directory, i), originals[i])
+        imsave('{}transformed_{}.jpg'.format(directory, i), transforms[i])
 
 
 #####################################
 #       Transform Functions         #
 #####################################
 
-def adjust_hsv(imgset, idx, values=None):
-    if values is None:
-        values = random.normal(loc=0.0, scale=0.33, size=len(imgset))
-        np.clip(values, -1.0, 0.0)
+def adjust_hsv(imgset, idx):
+    values = random.normal(loc=0.0, scale=0.33, size=len(imgset))
+    np.clip(values, -1.0, 0.0)
 
     def adjust_one(img, value):
         hsv = rgb2hsv(img)
@@ -128,20 +123,18 @@ def adjust_hsv(imgset, idx, values=None):
     result_imgs = [adjust_one(img, values[i]) for i, img in enumerate(imgset)]
     return result_imgs, values
 
-def adjust_hue(imgset, values=None):
-    return adjust_hsv(imgset, 0, values)
+def adjust_hue(imgset):
+    return adjust_hsv(imgset, 0)
 
-def adjust_saturation(imgset, values=None):
-    return adjust_hsv(imgset, 1, values)
+def adjust_saturation(imgset):
+    return adjust_hsv(imgset, 1)
 
-def adjust_brightness(imgset, values=None):
-    return adjust_hsv(imgset, 2, values)
+def adjust_brightness(imgset):
+    return adjust_hsv(imgset, 2)
 
-def adjust_contrast(imgset, values=None):
-    if values is None:
-        values = random.normal(loc=0.5, scale=0.152, size=len(imgset))
-        np.clip(values, 0.0, 1.0)
-
+def adjust_contrast(imgset):
+    values = random.normal(loc=0.5, scale=0.152, size=len(imgset))
+    np.clip(values, 0.0, 1.0)
     result_imgs = [adjust_sigmoid(img, cutoff=values[i]) for i, img in enumerate(imgset)]
     return result_imgs, values
 
