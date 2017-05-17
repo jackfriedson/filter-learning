@@ -11,6 +11,7 @@ from sklearn.utils import shuffle
 class DataSet(object):
     """Class for creating and maintaining a data set"""
 
+    # TODO: change train/test_percent to a train_split tuple
     def __init__(self, examples, labels, train_percent=0.6, test_percent=0.2, batch_size=None,
                  normalize=True, pca=True, retained_variance=0.99, **config):
         if len(examples) != len(labels):

@@ -19,6 +19,25 @@ TEST_IMG_PATH = '../../transformed_imgs/'
 MIN_HEIGHT = 100
 MIN_WIDTH = 100
 
+def create_filter_imgs(transform_fns, img_height=MIN_HEIGHT, img_width=MIN_WIDTH, max_examples=200):
+    imgpaths = glob(IMG_FOLDER + '*.jpg')
+    originals = [read_or_delete_img(path) for path in imgpaths[:max_examples]]
+    values = []
+
+    imgs = originals
+    for i, fn in enumerate(transform_fns):
+        transforms, new_values = fn(imgs)
+        imgs = transforms
+        values.append(new_values)
+
+    imsize = partial(resize_img, height=img_height, width=img_width)
+    imgpairs = zip(imsize(transforms), imsize(originals))
+
+    n_to_save = 10
+    save_images(originals[:n_to_save], transforms[:n_to_save], 'filter')
+
+    return imgpairs, values
+
 def create_img_data(transform_fn, preprocess_fn=None, img_height=MIN_HEIGHT,
                     img_width=MIN_WIDTH, data_batch=100, max_examples=None, **config):
     """Create data for the algorithm to learn from.
@@ -45,6 +64,7 @@ def create_img_data(transform_fn, preprocess_fn=None, img_height=MIN_HEIGHT,
 
     originals, transforms, values, diffs = [], [], [], []
 
+    # TODO: Abstract batch functionality
     for i in range(n_batches):
         batch_start = i * data_batch
         batch_end = (i + 1) * data_batch

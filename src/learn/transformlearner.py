@@ -59,13 +59,19 @@ class TransformLearner(object):
             raise ValueError('No existing TensorFlow session')
 
         if test_set is None:
-            test_set = (self.data.X_test, self.data.y_test)
+            X_test = self.data.X_test
+            y_test = self.data.y_test
+        else:
+            # Normalize and perform PCA on test set data
+            X_test = self.data.X_scaler.transform(test_set[0])
+            X_test = self.data.pca.transform(X_test)
+            y_test = test_set[1]
 
-        pred_y = self.sess.run(y_, feed_dict={X: test_set[0]})
-        self.print_percent_within(pred_y, [0.01, 0.05, 0.1])
-        self.plot_predictions(pred_y)
+        pred_y = self.sess.run(y_, feed_dict={X: X_test})
+        self.print_percent_within(pred_y, y_test)
+        self.plot_predictions(pred_y, y_test)
 
-        test_error = self.sess.run(cost_no_reg, feed_dict={X: test_set[0], Y: test_set[1]})
+        test_error = self.sess.run(cost_no_reg, feed_dict={X: X_test, Y: y_test})
         print 'Test error: %.3f' % test_error
 
     def plot_learning_curves(self, granularity=15):
@@ -228,19 +234,18 @@ class TransformLearner(object):
             self.sess.close()
             self.sess = None
 
-    def print_percent_within(self, predicted, given_pcts):
-        value_range = self.data.y_test.max() - self.data.y_test.min()
+    def print_percent_within(self, predicted, actual, given_pcts=[0.01, 0.05, 0.1]):
+        value_range = actual.max() - actual.min()
 
         for pct in given_pcts:
-            within_range = np.abs(predicted - self.data.y_test) / value_range < pct
+            within_range = np.abs(predicted - actual) / value_range < pct
             percent_in_range = np.mean(within_range)
             print('Predictions within {}%% of actual: %.2f%%'.format(int(pct * 100)) % (percent_in_range * 100))
 
-    def plot_predictions(self, pred_y):
-        y_test = self.data.y_test
+    def plot_predictions(self, predicted, actual):
         fig, ax = plt.subplots()
-        ax.scatter(y_test, pred_y)
-        ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'k--', lw=3)
+        ax.scatter(actual, predicted)
+        ax.plot([actual.min(), actual.max()], [actual.min(), actual.max()], 'k--', lw=3)
         ax.set_xlabel('Measured')
         ax.set_ylabel('Predicted')
         plt.show()
